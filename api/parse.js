@@ -50,7 +50,7 @@ function fetchUrl(url, options = {}) {
 }
 
 const PARSE_APIS = [
-    'https://api.toubiec.cn/douy?url=',
+    'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url=',
     'https://api.pearktrue.cn/api/video/parse/?url=',
     'https://api.yujian.vip/api/dy/parse/?url=',
     'https://api.copymanga.org/api/dy/parse/?url=',
