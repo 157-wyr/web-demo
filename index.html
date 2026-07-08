@@ -270,6 +270,9 @@
             <p class="text-xs text-gray-400 dark:text-gray-600 mt-1">
                 跨域说明：线上部署后无本地打开的 CORS 跨域问题，手机流量/WiFi 均可正常解析
             </p>
+            <p class="text-xs text-orange-400 dark:text-orange-500 mt-2">
+                ⚠️ 本地开发环境可能因网络限制无法访问公共代理服务器，请部署上线后测试
+            </p>
         </div>
     </footer>
 
@@ -294,8 +297,13 @@
         const CORS_PROXIES = [
             'https://api.allorigins.win/raw?url=',
             'https://corsproxy.io/?',
+            'https://api.codetabs.com/v1/proxy?quest=',
+            'https://thingproxy.freeboard.io/fetch/',
+            'https://api.allorigins.xyz/get?url=',
             'https://cors-anywhere.herokuapp.com/',
-            'https://api.codetabs.com/v1/proxy?quest='
+            'https://api.rss2json.com/v1/api.json?rss_url=',
+            'https://cors.bridged.cc/',
+            'https://api.allorigins.win/get?url='
         ];
 
         let currentProxyIndex = 0;
@@ -407,19 +415,39 @@
             return proxy;
         }
 
+        function fetchWithTimeout(url, options = {}, timeout = 15000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            return fetch(url, {
+                ...options,
+                signal: controller.signal
+            }).finally(() => clearTimeout(timeoutId));
+        }
+
         async function fetchWithProxy(url) {
             let lastError = null;
             for (let i = 0; i < CORS_PROXIES.length; i++) {
                 const proxy = await getNextProxy();
                 try {
-                    const response = await fetch(proxy + encodeURIComponent(url), {
+                    const response = await fetchWithTimeout(proxy + encodeURIComponent(url), {
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
-                        },
-                        timeout: 15000
-                    });
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                            'Referer': 'https://www.douyin.com/',
+                            'Accept-Encoding': 'gzip, deflate'
+                        }
+                    }, 15000);
                     if (response.ok) {
-                        return await response.text();
+                        const text = await response.text();
+                        try {
+                            const json = JSON.parse(text);
+                            if (json.contents || json.data || json.response) {
+                                return json.contents || JSON.stringify(json.data) || JSON.stringify(json.response);
+                            }
+                        } catch (e) {}
+                        return text;
                     }
                 } catch (error) {
                     lastError = error;
@@ -429,90 +457,173 @@
         }
 
         async function resolveShortUrl(url) {
-            try {
-                const response = await fetch(url, {
-                    method: 'HEAD',
-                    redirect: 'follow',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
-                    }
-                });
-                return response.url;
-            } catch {
+            if (!url.includes('v.douyin.com') && !url.includes('douyin.com/share')) {
                 return url;
             }
+            
+            const shortCodeMatch = url.match(/v\.douyin\.com\/([^/?]+)/);
+            if (shortCodeMatch) {
+                const shortCode = shortCodeMatch[1];
+                const awemeIdMatch = shortCode.match(/(\d{19})/);
+                if (awemeIdMatch) {
+                    return `https://www.douyin.com/video/${awemeIdMatch[1]}`;
+                }
+            }
+            
+            return url;
         }
 
         async function parseDouyin(url) {
             try {
                 url = await resolveShortUrl(url);
                 
-                const html = await fetchWithProxy(url);
+                let videoId = '';
+                const videoIdMatch = url.match(/(\d{19})/);
+                const itemIdMatch = url.match(/item_id=(\d+)/);
                 
-                const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
-                if (stateMatch) {
-                    let stateStr = stateMatch[1];
-                    stateStr = stateStr.replace(/\n/g, ' ');
-                    stateStr = stateStr.replace(/;/g, '');
-                    try {
-                        const state = JSON.parse(stateStr);
-                        const itemList = state?.ItemModule?.itemList;
-                        if (itemList && itemList.length > 0) {
-                            const item = itemList[0];
-                            const video = item.video;
-                            const images = item.images;
-                            
-                            if (video) {
-                                let playUrl = video.playAddr || video.playAddrLow || video.playAddrH264 || '';
-                                if (!playUrl) {
-                                    const videoInfo = state?.VideoDetailModule?.videoInfo;
-                                    playUrl = videoInfo?.playAddr || videoInfo?.playAddrLow || '';
+                if (videoIdMatch) {
+                    videoId = videoIdMatch[1];
+                } else if (itemIdMatch) {
+                    videoId = itemIdMatch[1];
+                } else {
+                    const idPatterns = [
+                        /video\/(\d+)/,
+                        /aweme\/detail\/(\d+)/,
+                        /group\/(\d+)/
+                    ];
+                    for (const pattern of idPatterns) {
+                        const match = url.match(pattern);
+                        if (match) {
+                            videoId = match[1];
+                            break;
+                        }
+                    }
+                }
+
+                let html = await fetchWithProxy(url);
+                
+                const syncMethods = [
+                    () => {
+                        const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                        if (stateMatch) {
+                            let stateStr = stateMatch[1];
+                            stateStr = stateStr.replace(/\n/g, ' ');
+                            stateStr = stateStr.replace(/;/g, '');
+                            try {
+                                const state = JSON.parse(stateStr);
+                                const itemList = state?.ItemModule?.itemList;
+                                if (itemList && itemList.length > 0) {
+                                    const item = itemList[0];
+                                    const video = item.video;
+                                    const images = item.images;
+                                    if (video) {
+                                        let playUrl = video.playAddr || video.playAddrLow || video.playAddrH264 || video.downloadAddr || '';
+                                        if (!playUrl) {
+                                            const videoInfo = state?.VideoDetailModule?.videoInfo;
+                                            playUrl = videoInfo?.playAddr || videoInfo?.playAddrLow || videoInfo?.downloadAddr || '';
+                                        }
+                                        if (playUrl) {
+                                            playUrl = playUrl.replace(/playwm/g, 'play');
+                                            return { type: 'video', url: playUrl, title: item.desc || '抖音视频' };
+                                        }
+                                    }
+                                    if (images && images.length > 0) {
+                                        const imgUrls = images.map(img => img.urlList?.[0] || img.url || '').filter(Boolean);
+                                        return { type: 'gallery', urls: imgUrls, title: item.desc || '抖音图集' };
+                                    }
                                 }
-                                if (playUrl) {
-                                    playUrl = playUrl.replace(/playwm/g, 'play');
-                                    return {
-                                        type: 'video',
-                                        url: playUrl,
-                                        title: item.desc || '抖音视频'
-                                    };
+                            } catch (e) {}
+                        }
+                    },
+                    () => {
+                        const playAddrMatch = html.match(/"playAddr"\s*:\s*"([^"]+)"/);
+                        if (playAddrMatch) {
+                            let playUrl = playAddrMatch[1];
+                            playUrl = playUrl.replace(/playwm/g, 'play');
+                            return { type: 'video', url: playUrl, title: '抖音视频' };
+                        }
+                    },
+                    () => {
+                        const downloadAddrMatch = html.match(/"downloadAddr"\s*:\s*"([^"]+)"/);
+                        if (downloadAddrMatch) {
+                            let videoUrl = downloadAddrMatch[1];
+                            videoUrl = videoUrl.replace(/playwm/g, 'play');
+                            return { type: 'video', url: videoUrl, title: '抖音视频' };
+                        }
+                    },
+                    () => {
+                        const videoMatch = html.match(/<video[^>]+src="([^"]+)"/);
+                        if (videoMatch) {
+                            let videoUrl = videoMatch[1];
+                            videoUrl = videoUrl.replace(/playwm/g, 'play');
+                            return { type: 'video', url: videoUrl, title: '抖音视频' };
+                        }
+                    },
+                    () => {
+                        const urlPatterns = [
+                            /"url":"([^"]+play[^"]+)"/g,
+                            /"url":"([^"]+video[^"]+)"/g,
+                            /"url_list":\[([^\]]+)\]/g,
+                            /"video":\{([^}]+)\}/g
+                        ];
+                        for (const pattern of urlPatterns) {
+                            let match;
+                            while ((match = pattern.exec(html)) !== null) {
+                                const inner = match[1];
+                                const innerMatch = inner.match(/"([^"]+play[^"]+)"/);
+                                if (innerMatch) {
+                                    let videoUrl = innerMatch[1];
+                                    videoUrl = videoUrl.replace(/playwm/g, 'play');
+                                    if (videoUrl.startsWith('//')) videoUrl = 'https:' + videoUrl;
+                                    return { type: 'video', url: videoUrl, title: '抖音视频' };
                                 }
-                            }
-                            
-                            if (images && images.length > 0) {
-                                const imgUrls = images.map(img => img.urlList?.[0] || img.url || '').filter(Boolean);
-                                return {
-                                    type: 'gallery',
-                                    urls: imgUrls,
-                                    title: item.desc || '抖音图集'
-                                };
                             }
                         }
+                    },
+                    () => {
+                        const awemeMatch = html.match(/aweme_id\s*:\s*"([^"]+)"/);
+                        if (awemeMatch) {
+                            videoId = awemeMatch[1];
+                        }
+                    },
+                    () => {
+                        const metaMatch = html.match(/<meta[^>]+content="([^"]+video[^"]+)"/);
+                        if (metaMatch) {
+                            let videoUrl = metaMatch[1];
+                            videoUrl = videoUrl.replace(/playwm/g, 'play');
+                            return { type: 'video', url: videoUrl, title: '抖音视频' };
+                        }
+                    }
+                ];
+
+                for (const method of syncMethods) {
+                    const result = method();
+                    if (result) {
+                        return result;
+                    }
+                }
+
+                if (videoId) {
+                    try {
+                        const apiUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`;
+                        const apiHtml = await fetchWithProxy(apiUrl);
+                        try {
+                            const apiText = JSON.parse(apiHtml);
+                            if (apiText?.aweme_detail) {
+                                const video = apiText.aweme_detail.video;
+                                if (video) {
+                                    let playUrl = video.play_addr?.url_list?.[0] || video.download_addr?.url_list?.[0] || '';
+                                    if (playUrl) {
+                                        playUrl = playUrl.replace(/playwm/g, 'play');
+                                        return { type: 'video', url: playUrl, title: apiText.aweme_detail.desc || '抖音视频' };
+                                    }
+                                }
+                            }
+                        } catch (e) {}
                     } catch (e) {}
                 }
 
-                const playAddrMatch = html.match(/"playAddr"\s*:\s*"([^"]+)"/);
-                if (playAddrMatch) {
-                    let playUrl = playAddrMatch[1];
-                    playUrl = playUrl.replace(/playwm/g, 'play');
-                    return {
-                        type: 'video',
-                        url: playUrl,
-                        title: '抖音视频'
-                    };
-                }
-
-                const videoMatch = html.match(/<video[^>]+src="([^"]+)"/);
-                if (videoMatch) {
-                    let videoUrl = videoMatch[1];
-                    videoUrl = videoUrl.replace(/playwm/g, 'play');
-                    return {
-                        type: 'video',
-                        url: videoUrl,
-                        title: '抖音视频'
-                    };
-                }
-
-                throw new Error('未能提取视频地址');
+                throw new Error('未能提取视频地址，请确保链接有效且作品未下架');
             } catch (error) {
                 throw new Error('抖音解析失败：' + error.message);
             }
@@ -528,63 +639,99 @@
                 }
                 const noteId = noteIdMatch[1];
                 
-                const apiUrl = `https://www.xiaohongshu.com/api/sns/v3/note/${noteId}`;
-                const html = await fetchWithProxy(apiUrl);
+                let html = await fetchWithProxy(url);
                 
-                const dataMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
-                if (dataMatch) {
-                    try {
-                        const state = JSON.parse(dataMatch[1]);
-                        const note = state?.note?.noteDetail;
-                        if (note) {
-                            const images = note.images || [];
-                            const video = note.video;
-                            
-                            if (video) {
-                                return {
-                                    type: 'video',
-                                    url: video.url,
-                                    title: note.title || '小红书视频'
-                                };
-                            }
-                            
-                            if (images.length > 0) {
-                                const imgUrls = images.map(img => img.urls?.original || img.url || '').filter(Boolean);
-                                return {
-                                    type: 'gallery',
-                                    urls: imgUrls,
-                                    title: note.title || '小红书图集'
-                                };
+                const syncMethods = [
+                    () => {
+                        const dataMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                        if (dataMatch) {
+                            try {
+                                const state = JSON.parse(dataMatch[1]);
+                                const note = state?.note?.noteDetail;
+                                if (note) {
+                                    const images = note.images || [];
+                                    const video = note.video;
+                                    if (video) {
+                                        return { type: 'video', url: video.url, title: note.title || '小红书视频' };
+                                    }
+                                    if (images.length > 0) {
+                                        const imgUrls = images.map(img => img.urls?.original || img.url || '').filter(Boolean);
+                                        return { type: 'gallery', urls: imgUrls, title: note.title || '小红书图集' };
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+                    },
+                    () => {
+                        const imgRegex = /"url"\s*:\s*"([^"]+original[^"]+)"/g;
+                        const imgUrls = [];
+                        let match;
+                        while ((match = imgRegex.exec(html)) !== null) {
+                            imgUrls.push(match[1]);
+                        }
+                        if (imgUrls.length > 0) {
+                            return { type: 'gallery', urls: imgUrls, title: '小红书图集' };
+                        }
+                    },
+                    () => {
+                        const videoMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
+                        if (videoMatch) {
+                            return { type: 'video', url: videoMatch[1], title: '小红书视频' };
+                        }
+                    },
+                    () => {
+                        const playUrlMatch = html.match(/"playUrl"\s*:\s*"([^"]+)"/);
+                        if (playUrlMatch) {
+                            return { type: 'video', url: playUrlMatch[1], title: '小红书视频' };
+                        }
+                    },
+                    () => {
+                        const urlListMatch = html.match(/"url_list":\[([^\]]+)\]/);
+                        if (urlListMatch) {
+                            const innerUrls = urlListMatch[1].match(/"([^"]+)"/g);
+                            if (innerUrls) {
+                                const urls = innerUrls.map(u => u.replace(/"/g, '')).filter(u => u.includes('http'));
+                                if (urls.length > 0) {
+                                    return urls.some(u => u.includes('video')) 
+                                        ? { type: 'video', url: urls[0], title: '小红书视频' }
+                                        : { type: 'gallery', urls: urls, title: '小红书图集' };
+                                }
                             }
                         }
-                    } catch (e) {}
+                    }
+                ];
+
+                for (const method of syncMethods) {
+                    const result = method();
+                    if (result) {
+                        return result;
+                    }
                 }
 
-                const imgRegex = /"url"\s*:\s*"([^"]+original[^"]+)"/g;
-                const imgUrls = [];
-                let match;
-                while ((match = imgRegex.exec(html)) !== null) {
-                    imgUrls.push(match[1]);
-                }
-                
-                if (imgUrls.length > 0) {
-                    return {
-                        type: 'gallery',
-                        urls: imgUrls,
-                        title: '小红书图集'
-                    };
-                }
+                try {
+                    const apiUrl = `https://www.xiaohongshu.com/api/sns/v3/note/${noteId}`;
+                    const apiHtml = await fetchWithProxy(apiUrl);
+                    const dataMatch = apiHtml.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                    if (dataMatch) {
+                        try {
+                            const state = JSON.parse(dataMatch[1]);
+                            const note = state?.note?.noteDetail;
+                            if (note) {
+                                const images = note.images || [];
+                                const video = note.video;
+                                if (video) {
+                                    return { type: 'video', url: video.url, title: note.title || '小红书视频' };
+                                }
+                                if (images.length > 0) {
+                                    const imgUrls = images.map(img => img.urls?.original || img.url || '').filter(Boolean);
+                                    return { type: 'gallery', urls: imgUrls, title: note.title || '小红书图集' };
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                } catch (e) {}
 
-                const videoMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
-                if (videoMatch) {
-                    return {
-                        type: 'video',
-                        url: videoMatch[1],
-                        title: '小红书视频'
-                    };
-                }
-
-                throw new Error('未能提取资源地址');
+                throw new Error('未能提取资源地址，请确保链接有效且作品未下架');
             } catch (error) {
                 throw new Error('小红书解析失败：' + error.message);
             }
@@ -594,42 +741,73 @@
             try {
                 url = await resolveShortUrl(url);
                 
-                const html = await fetchWithProxy(url);
+                let html = await fetchWithProxy(url);
                 
-                const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
-                if (stateMatch) {
-                    try {
-                        const state = JSON.parse(stateMatch[1]);
-                        const video = state?.videoInfo?.video;
-                        if (video) {
-                            return {
-                                type: 'video',
-                                url: video.url || video.playUrl || '',
-                                title: video.caption || '快手视频'
-                            };
+                const extractionMethods = [
+                    () => {
+                        const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                        if (stateMatch) {
+                            try {
+                                const state = JSON.parse(stateMatch[1]);
+                                const video = state?.videoInfo?.video;
+                                if (video) {
+                                    return { type: 'video', url: video.url || video.playUrl || '', title: video.caption || '快手视频' };
+                                }
+                            } catch (e) {}
                         }
-                    } catch (e) {}
+                    },
+                    () => {
+                        const videoMatch = html.match(/"url"\s*:\s*"([^"]+video[^"]+)"/);
+                        if (videoMatch) {
+                            return { type: 'video', url: videoMatch[1], title: '快手视频' };
+                        }
+                    },
+                    () => {
+                        const playUrlMatch = html.match(/"playUrl"\s*:\s*"([^"]+)"/);
+                        if (playUrlMatch) {
+                            return { type: 'video', url: playUrlMatch[1], title: '快手视频' };
+                        }
+                    },
+                    () => {
+                        const srcMatch = html.match(/<video[^>]+src="([^"]+)"/);
+                        if (srcMatch) {
+                            return { type: 'video', url: srcMatch[1], title: '快手视频' };
+                        }
+                    },
+                    () => {
+                        const urlListMatch = html.match(/"url_list":\[([^\]]+)\]/);
+                        if (urlListMatch) {
+                            const innerUrls = urlListMatch[1].match(/"([^"]+)"/g);
+                            if (innerUrls) {
+                                const urls = innerUrls.map(u => u.replace(/"/g, '')).filter(u => u.includes('http'));
+                                if (urls.length > 0) {
+                                    return { type: 'video', url: urls[0], title: '快手视频' };
+                                }
+                            }
+                        }
+                    },
+                    () => {
+                        const photoMatch = html.match(/"photo_list":\[([^\]]+)\]/);
+                        if (photoMatch) {
+                            const innerUrls = photoMatch[1].match(/"([^"]+original[^"]+)"/g);
+                            if (innerUrls) {
+                                const urls = innerUrls.map(u => u.replace(/"/g, ''));
+                                if (urls.length > 0) {
+                                    return { type: 'gallery', urls: urls, title: '快手图集' };
+                                }
+                            }
+                        }
+                    }
+                ];
+
+                for (const method of extractionMethods) {
+                    const result = method();
+                    if (result) {
+                        return result;
+                    }
                 }
 
-                const videoMatch = html.match(/"url"\s*:\s*"([^"]+video[^"]+)"/);
-                if (videoMatch) {
-                    return {
-                        type: 'video',
-                        url: videoMatch[1],
-                        title: '快手视频'
-                    };
-                }
-
-                const playUrlMatch = html.match(/"playUrl"\s*:\s*"([^"]+)"/);
-                if (playUrlMatch) {
-                    return {
-                        type: 'video',
-                        url: playUrlMatch[1],
-                        title: '快手视频'
-                    };
-                }
-
-                throw new Error('未能提取视频地址');
+                throw new Error('未能提取视频地址，请确保链接有效且作品未下架');
             } catch (error) {
                 throw new Error('快手解析失败：' + error.message);
             }
@@ -885,10 +1063,20 @@
                 return;
             }
 
+            if (isParsing) {
+                showToast('正在解析中，请稍候', 2000);
+                return;
+            }
+
+            isParsing = true;
             setLoading(true);
             
             try {
-                const result = await parseUrl(url);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('解析超时，请稍后重试')), 15000)
+                );
+                
+                const result = await Promise.race([parseUrl(url), timeoutPromise]);
                 currentResult = result;
                 
                 resultSection.classList.remove('hidden');
@@ -902,8 +1090,10 @@
                 saveHistory(result, url);
                 showToast('解析成功');
             } catch (error) {
-                showToast(error.message, 3000);
+                console.error('Parse error:', error);
+                showToast(error.message || '解析失败，请检查网络或稍后重试', 3000);
             } finally {
+                isParsing = false;
                 setLoading(false);
             }
         });
