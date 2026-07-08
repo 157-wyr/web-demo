@@ -488,6 +488,13 @@
                 }
             }
             
+            try {
+                const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
+                if (response.headers.get('location')) {
+                    return response.headers.get('location');
+                }
+            } catch (e) {}
+            
             return url;
         }
 

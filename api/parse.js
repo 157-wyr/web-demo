@@ -1,7 +1,11 @@
 const https = require('https');
 const http = require('http');
 
-function fetchUrl(url, options = {}) {
+async function fetchUrl(url, options = {}, maxRedirects = 3) {
+    if (maxRedirects <= 0) {
+        throw new Error('Too many redirects');
+    }
+    
     return new Promise((resolve, reject) => {
         const protocol = url.startsWith('https') ? https : http;
         const parsedUrl = new URL(url);
@@ -29,11 +33,20 @@ function fetchUrl(url, options = {}) {
                 data += chunk;
             });
             res.on('end', () => {
-                resolve({
-                    statusCode: res.statusCode,
-                    headers: res.headers,
-                    body: data
-                });
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    const redirectUrl = res.headers.location.startsWith('http') ? 
+                        res.headers.location : 
+                        new URL(res.headers.location, url).href;
+                    fetchUrl(redirectUrl, options, maxRedirects - 1)
+                        .then(resolve)
+                        .catch(reject);
+                } else {
+                    resolve({
+                        statusCode: res.statusCode,
+                        headers: res.headers,
+                        body: data
+                    });
+                }
             });
         });
 
@@ -52,8 +65,17 @@ function fetchUrl(url, options = {}) {
 
 async function parseDouyin(url) {
     let videoId = '';
-    const videoIdMatch = url.match(/(\d{19})/);
-    const itemIdMatch = url.match(/item_id=(\d+)/);
+    
+    let finalUrl = url;
+    if (url.includes('v.douyin.com')) {
+        try {
+            const result = await fetchUrl(url, { method: 'HEAD' });
+            finalUrl = result.headers.location || url;
+        } catch (e) {}
+    }
+    
+    const videoIdMatch = finalUrl.match(/(\d{19})/);
+    const itemIdMatch = finalUrl.match(/item_id=(\d+)/);
     
     if (videoIdMatch) {
         videoId = videoIdMatch[1];
@@ -62,7 +84,7 @@ async function parseDouyin(url) {
     } else {
         const idPatterns = [/video\/(\d+)/, /aweme\/detail\/(\d+)/, /group\/(\d+)/];
         for (const pattern of idPatterns) {
-            const match = url.match(pattern);
+            const match = finalUrl.match(pattern);
             if (match) {
                 videoId = match[1];
                 break;
