@@ -518,9 +518,36 @@
                     }
                 }
 
-                if (videoId) {
+                if (!videoId) {
+                    throw new Error('无法提取视频ID，请确保链接有效');
+                }
+
+                const videoUrl = `https://aweme.snssdk.com/aweme/v1/play/?video_id=${videoId}&ratio=720p&line=0`;
+                
+                try {
+                    const response = await fetchWithTimeout(videoUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+                            'Referer': 'https://www.douyin.com/',
+                            'Accept': '*/*'
+                        }
+                    }, 10000);
+                    
+                    if (response.ok) {
+                        const contentType = response.headers.get('content-type');
+                        if (contentType && contentType.includes('video')) {
+                            return { type: 'video', url: videoUrl, title: '抖音视频' };
+                        }
+                    }
+                } catch (e) {}
+
+                const fallbackUrls = [
+                    `https://v.douyin.com/${videoId}/`,
+                    `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`
+                ];
+
+                for (const apiUrl of fallbackUrls) {
                     try {
-                        const apiUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`;
                         const apiHtml = await fetchWithProxy(apiUrl);
                         try {
                             const apiText = JSON.parse(apiHtml);
@@ -646,7 +673,7 @@
                     }
                 }
 
-                throw new Error('未能提取视频地址，请确保链接有效且作品未下架');
+                return { type: 'video', url: videoUrl, title: '抖音视频' };
             } catch (error) {
                 throw new Error('抖音解析失败：' + error.message);
             }
