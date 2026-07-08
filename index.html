@@ -883,33 +883,55 @@
                 throw new Error('不支持的链接格式，仅支持抖音、小红书、快手');
             }
 
-            try {
-                const apiUrl = `/api/parse?url=${encodeURIComponent(url)}`;
-                const response = await fetchWithTimeout(apiUrl, {}, 15000);
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    if (result.error) {
-                        throw new Error(result.error);
-                    }
-                    return result;
-                }
-                
-                const errorText = await response.text();
-                throw new Error('API请求失败: ' + errorText);
-            } catch (apiError) {
-                console.warn('API解析失败，尝试本地解析:', apiError.message);
-                
-                if (url.includes('douyin')) {
+            if (url.includes('douyin')) {
+                try {
+                    const thirdPartyResult = await parseDouyinWithThirdParty(url);
+                    return thirdPartyResult;
+                } catch (e) {
+                    console.warn('第三方API解析失败，尝试本地解析:', e.message);
                     return await parseDouyin(url);
-                } else if (url.includes('xiaohongshu')) {
-                    return await parseXiaohongshu(url);
-                } else if (url.includes('kuaishou')) {
-                    return await parseKuaishou(url);
-                } else {
-                    throw new Error('无法识别平台');
+                }
+            } else if (url.includes('xiaohongshu')) {
+                return await parseXiaohongshu(url);
+            } else if (url.includes('kuaishou')) {
+                return await parseKuaishou(url);
+            } else {
+                throw new Error('无法识别平台');
+            }
+        }
+
+        async function parseDouyinWithThirdParty(url) {
+            const apis = [
+                'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url='
+            ];
+            
+            for (const apiUrl of apis) {
+                try {
+                    const response = await fetchWithTimeout(apiUrl + encodeURIComponent(url), {
+                        headers: {
+                            'Referer': 'https://www.douyin.com/',
+                            'Origin': 'https://www.douyin.com'
+                        }
+                    }, 15000);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log('第三方API响应:', JSON.stringify(data).substring(0, 200));
+                        
+                        if (data.code === 200) {
+                            if (data.video) {
+                                return { type: 'video', url: data.video, title: data.title || '抖音视频' };
+                            }
+                            if (data.images && data.images.length > 0) {
+                                return { type: 'gallery', urls: data.images, title: data.title || '抖音图集' };
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('第三方API请求失败:', apiUrl, e.message);
                 }
             }
+            throw new Error('第三方API解析失败');
         }
 
         function renderVideo(result) {
