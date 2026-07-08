@@ -300,10 +300,11 @@
             'https://api.codetabs.com/v1/proxy?quest=',
             'https://thingproxy.freeboard.io/fetch/',
             'https://api.allorigins.xyz/get?url=',
+            'https://api.allorigins.win/get?url=',
+            'https://api.cors.bridged.cc/',
             'https://cors-anywhere.herokuapp.com/',
             'https://api.rss2json.com/v1/api.json?rss_url=',
-            'https://cors.bridged.cc/',
-            'https://api.allorigins.win/get?url='
+            'https://cors.bridged.cc/'
         ];
 
         let currentProxyIndex = 0;
@@ -427,32 +428,49 @@
 
         async function fetchWithProxy(url) {
             let lastError = null;
-            for (let i = 0; i < CORS_PROXIES.length; i++) {
-                const proxy = await getNextProxy();
-                try {
-                    const response = await fetchWithTimeout(proxy + encodeURIComponent(url), {
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                            'Referer': 'https://www.douyin.com/',
-                            'Accept-Encoding': 'gzip, deflate'
-                        }
-                    }, 15000);
-                    if (response.ok) {
-                        const text = await response.text();
-                        try {
-                            const json = JSON.parse(text);
-                            if (json.contents || json.data || json.response) {
-                                return json.contents || JSON.stringify(json.data) || JSON.stringify(json.response);
-                            }
-                        } catch (e) {}
-                        return text;
-                    }
-                } catch (error) {
-                    lastError = error;
+            const encodedUrl = encodeURIComponent(url);
+            const headers = {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Referer': 'https://www.douyin.com/',
+                'Accept-Encoding': 'gzip, deflate'
+            };
+
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const proxyPromises = [];
+                const proxiesToTry = CORS_PROXIES.slice();
+                for (let i = 0; i < Math.min(4, proxiesToTry.length); i++) {
+                    const proxy = proxiesToTry.splice(Math.floor(Math.random() * proxiesToTry.length), 1)[0];
+                    proxyPromises.push(
+                        fetchWithTimeout(proxy + encodedUrl, { headers }, 10000)
+                            .then(response => {
+                                if (!response.ok) throw new Error('HTTP error');
+                                return response.text();
+                            })
+                            .then(text => {
+                                try {
+                                    const json = JSON.parse(text);
+                                    if (json.contents || json.data || json.response) {
+                                        return json.contents || JSON.stringify(json.data) || JSON.stringify(json.response);
+                                    }
+                                } catch (e) {}
+                                return text;
+                            })
+                            .catch(() => null)
+                    );
                 }
+
+                const results = await Promise.all(proxyPromises);
+                const successResult = results.find(r => r !== null);
+                if (successResult) {
+                    return successResult;
+                }
+
+                lastError = new Error('代理请求失败');
+                await new Promise(r => setTimeout(r, 500));
             }
+
             throw lastError || new Error('所有代理服务器均不可用');
         }
 
@@ -498,6 +516,31 @@
                             break;
                         }
                     }
+                }
+
+                if (videoId) {
+                    try {
+                        const apiUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`;
+                        const apiHtml = await fetchWithProxy(apiUrl);
+                        try {
+                            const apiText = JSON.parse(apiHtml);
+                            if (apiText?.aweme_detail) {
+                                const video = apiText.aweme_detail.video;
+                                if (video) {
+                                    let playUrl = video.play_addr?.url_list?.[0] || video.download_addr?.url_list?.[0] || '';
+                                    if (playUrl) {
+                                        playUrl = playUrl.replace(/playwm/g, 'play');
+                                        return { type: 'video', url: playUrl, title: apiText.aweme_detail.desc || '抖音视频' };
+                                    }
+                                }
+                                const images = apiText.aweme_detail.image_list;
+                                if (images && images.length > 0) {
+                                    const imgUrls = images.map(img => img.url_list?.[0] || img.url || '').filter(Boolean);
+                                    return { type: 'gallery', urls: imgUrls, title: apiText.aweme_detail.desc || '抖音图集' };
+                                }
+                            }
+                        } catch (e) {}
+                    } catch (e) {}
                 }
 
                 let html = await fetchWithProxy(url);
@@ -601,26 +644,6 @@
                     if (result) {
                         return result;
                     }
-                }
-
-                if (videoId) {
-                    try {
-                        const apiUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`;
-                        const apiHtml = await fetchWithProxy(apiUrl);
-                        try {
-                            const apiText = JSON.parse(apiHtml);
-                            if (apiText?.aweme_detail) {
-                                const video = apiText.aweme_detail.video;
-                                if (video) {
-                                    let playUrl = video.play_addr?.url_list?.[0] || video.download_addr?.url_list?.[0] || '';
-                                    if (playUrl) {
-                                        playUrl = playUrl.replace(/playwm/g, 'play');
-                                        return { type: 'video', url: playUrl, title: apiText.aweme_detail.desc || '抖音视频' };
-                                    }
-                                }
-                            }
-                        } catch (e) {}
-                    } catch (e) {}
                 }
 
                 throw new Error('未能提取视频地址，请确保链接有效且作品未下架');
