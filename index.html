@@ -393,6 +393,10 @@
             const urlRegex = /https?:\/\/[^\s]+/gi;
             const matches = text.match(urlRegex);
             if (matches && matches.length > 0) {
+                const fullLink = matches.find(m => m.includes('/video/') && m.match(/\d{19}/));
+                if (fullLink) {
+                    return fullLink;
+                }
                 return matches[0];
             }
             return text.trim();
@@ -486,14 +490,12 @@
                 if (awemeIdMatch) {
                     return `https://www.douyin.com/video/${awemeIdMatch[1]}`;
                 }
-            }
-            
-            try {
-                const response = await fetch(url, { method: 'HEAD', redirect: 'manual' });
-                if (response.headers.get('location')) {
-                    return response.headers.get('location');
+                
+                const idMatch = shortCode.match(/(\d+)/);
+                if (idMatch) {
+                    return `https://www.douyin.com/video/${idMatch[1]}`;
                 }
-            } catch (e) {}
+            }
             
             return url;
         }
