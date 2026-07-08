@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="短视频去水印解析 - 支持抖音、小红书、快手视频去水印下载">
+    <title>短视频去水印解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            300: '#93c5fd',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        .btn-touch {
+            min-height: 48px;
+            min-width: 48px;
+            padding: 12px 24px;
+        }
+        .input-touch {
+            min-height: 48px;
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.2s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .toast {
+            animation: toastIn 0.3s ease-out;
+        }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .safe-area-bottom {
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 min-h-screen flex flex-col">
+
+    <header class="sticky top-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-800">
+        <div class="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                </div>
+                <h1 class="text-xl font-bold text-gray-900 dark:text-white">去水印解析</h1>
+            </div>
+            <button id="themeToggle" class="btn-touch p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <svg id="moonIcon" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 block dark:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-lg mx-auto w-full px-4 py-6 space-y-6">
+
+        <section class="slide-in">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">输入视频链接</label>
+                <div class="relative">
+                    <textarea 
+                        id="linkInput" 
+                        class="input-touch w-full px-4 py-3 pr-24 rounded-xl border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-base leading-relaxed"
+                        rows="3"
+                        placeholder="粘贴抖音、小红书、快手分享链接..."></textarea>
+                    <div class="absolute right-2 bottom-2 flex flex-col gap-2">
+                        <button id="pasteBtn" class="btn-touch w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="粘贴">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                        </button>
+                        <button id="clearBtn" class="btn-touch w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" title="清空">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <button id="parseBtn" class="btn-touch w-full mt-4 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl hover:from-primary-600 hover:to-primary-700 transition-all shadow-lg shadow-primary-500/30 active:scale-[0.98] flex items-center justify-center gap-2">
+                    <svg id="parseIcon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <svg id="loadingIcon" class="w-5 h-5 loading-spinner hidden" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span id="parseText">开始解析</span>
+                </button>
+            </div>
+        </section>
+
+        <section id="resultSection" class="hidden slide-in">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">解析结果</h3>
+                    <button id="closeResultBtn" class="btn-touch p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="p-4">
+                    <div id="videoPreview" class="hidden">
+                        <video id="resultVideo" class="w-full rounded-xl bg-black" controls playsinline></video>
+                        <p id="videoTitle" class="mt-3 text-sm text-gray-600 dark:text-gray-400 line-clamp-2"></p>
+                    </div>
+                    
+                    <div id="imageGallery" class="hidden">
+                        <div class="relative">
+                            <div id="galleryContainer" class="overflow-hidden rounded-xl bg-gray-900" style="touch-action: pan-y;">
+                                <div id="galleryTrack" class="flex transition-transform duration-300 ease-out" style="will-change: transform;">
+                                </div>
+                            </div>
+                            <div class="absolute left-0 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full">
+                                <button id="prevBtn" class="btn-touch w-10 h-10 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="absolute right-0 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full">
+                                <button id="nextBtn" class="btn-touch w-10 h-10 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex justify-center gap-2 mt-3">
+                            <span id="galleryCounter" class="text-sm text-gray-500 dark:text-gray-400">1/1</span>
+                        </div>
+                        <p id="galleryTitle" class="mt-3 text-sm text-gray-600 dark:text-gray-400 line-clamp-2"></p>
+                    </div>
+
+                    <div class="flex flex-col gap-3 mt-5">
+                        <button id="downloadBtn" class="btn-touch w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-lg shadow-green-500/30 active:scale-[0.98] flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            <span>下载</span>
+                        </button>
+                        <button id="copyLinkBtn" class="btn-touch w-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <span>复制无水印链接</span>
+                        </button>
+                        <button id="openNewBtn" class="btn-touch w-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                            <span>新窗口打开</span>
+                        </button>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                        <p class="text-xs text-yellow-800 dark:text-yellow-200">
+                            💡 <strong>iOS用户提示：</strong>点击"新窗口打开"后，长按视频/图片选择"保存到相册"
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="historySection">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-gray-900 dark:text-white">解析历史</h3>
+                <button id="clearHistoryBtn" class="text-sm text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">清空</button>
+            </div>
+            <div id="historyList" class="space-y-2">
+                <div class="text-center py-8 text-gray-400 dark:text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p class="text-sm">暂无解析记录</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">使用说明</h3>
+            <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
+                <li class="flex items-start gap-2">
+                    <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300 flex items-center justify-center flex-shrink-0 text-xs font-bold">1</span>
+                    <span>复制抖音、小红书、快手的视频分享链接</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300 flex items-center justify-center flex-shrink-0 text-xs font-bold">2</span>
+                    <span>粘贴到输入框，点击"开始解析"</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300 flex items-center justify-center flex-shrink-0 text-xs font-bold">3</span>
+                    <span>解析成功后点击下载保存到本地</span>
+                </li>
+            </ul>
+        </section>
+
+        <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <h3 class="font-semibold text-gray-900 dark:text-white mb-4">免责声明</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                本工具仅用于个人学习和素材收藏，请勿用于商业用途或侵犯他人版权。
+                所有视频、图片版权归原作者所有，使用前请确保已获得原作者授权。
+            </p>
+        </section>
+
+    </main>
+
+    <footer class="safe-area-bottom py-6 text-center">
+        <div class="max-w-lg mx-auto px-4">
+            <p class="text-xs text-gray-400 dark:text-gray-600">
+                本页面为静态网页，可部署到 Vercel、GitHub Pages、国内静态托管平台等
+            </p>
+            <p class="text-xs text-gray-400 dark:text-gray-600 mt-1">
+                跨域说明：线上部署后无本地打开的 CORS 跨域问题，手机流量/WiFi 均可正常解析
+            </p>
+        </div>
+    </footer>
+
+    <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-[100] hidden">
+        <div class="bg-gray-900/90 text-white px-6 py-3 rounded-full text-sm font-medium shadow-lg toast">
+            <span id="toastMessage"></span>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/50 backdrop-blur-sm fade-in">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 w-[80%] max-w-sm shadow-2xl">
+            <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">确认操作</h4>
+            <p id="confirmMessage" class="text-sm text-gray-600 dark:text-gray-400 mb-6"></p>
+            <div class="flex gap-3">
+                <button id="confirmCancel" class="btn-touch flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">取消</button>
+                <button id="confirmOk" class="btn-touch flex-1 bg-primary-500 text-white font-medium rounded-xl hover:bg-primary-600 transition-colors">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CORS_PROXIES = [
+            'https://api.allorigins.win/raw?url=',
+            'https://corsproxy.io/?',
+            'https://cors-anywhere.herokuapp.com/',
+            'https://api.codetabs.com/v1/proxy?quest='
+        ];
+
+        let currentProxyIndex = 0;
+        let currentResult = null;
+        let isParsing = false;
+
+        const linkInput = document.getElementById('linkInput');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const parseBtn = document.getElementById('parseBtn');
+        const parseIcon = document.getElementById('parseIcon');
+        const loadingIcon = document.getElementById('loadingIcon');
+        const parseText = document.getElementById('parseText');
+        const resultSection = document.getElementById('resultSection');
+        const videoPreview = document.getElementById('videoPreview');
+        const imageGallery = document.getElementById('imageGallery');
+        const resultVideo = document.getElementById('resultVideo');
+        const videoTitle = document.getElementById('videoTitle');
+        const galleryTrack = document.getElementById('galleryTrack');
+        const galleryCounter = document.getElementById('galleryCounter');
+        const galleryTitle = document.getElementById('galleryTitle');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        const openNewBtn = document.getElementById('openNewBtn');
+        const closeResultBtn = document.getElementById('closeResultBtn');
+        const themeToggle = document.getElementById('themeToggle');
+        const sunIcon = document.getElementById('sunIcon');
+        const moonIcon = document.getElementById('moonIcon');
+        const historyList = document.getElementById('historyList');
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toastMessage');
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmCancel = document.getElementById('confirmCancel');
+        const confirmOk = document.getElementById('confirmOk');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const galleryContainer = document.getElementById('galleryContainer');
+
+        let currentImageIndex = 0;
+        let images = [];
+        let touchStartX = 0;
+        let touchEndX = 0;
+        let touchStartY = 0;
+        let touchEndY = 0;
+
+        function showToast(message, duration = 2000) {
+            toastMessage.textContent = message;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, duration);
+        }
+
+        function showConfirm(message, onConfirm) {
+            confirmMessage.textContent = message;
+            confirmModal.classList.remove('hidden');
+            confirmOk.onclick = () => {
+                confirmModal.classList.add('hidden');
+                onConfirm();
+            };
+            confirmCancel.onclick = () => {
+                confirmModal.classList.add('hidden');
+            };
+        }
+
+        function setLoading(loading) {
+            isParsing = loading;
+            if (loading) {
+                parseIcon.classList.add('hidden');
+                loadingIcon.classList.remove('hidden');
+                parseText.textContent = '解析中...';
+                parseBtn.disabled = true;
+                parseBtn.classList.add('opacity-70');
+            } else {
+                parseIcon.classList.remove('hidden');
+                loadingIcon.classList.add('hidden');
+                parseText.textContent = '开始解析';
+                parseBtn.disabled = false;
+                parseBtn.classList.remove('opacity-70');
+            }
+        }
+
+        function extractLink(text) {
+            const urlRegex = /https?:\/\/[^\s]+/gi;
+            const matches = text.match(urlRegex);
+            if (matches && matches.length > 0) {
+                return matches[0];
+            }
+            return text.trim();
+        }
+
+        function isValidUrl(url) {
+            const patterns = [
+                /douyin\.com/i,
+                /v\.douyin\.com/i,
+                /xiaohongshu\.com/i,
+                /kuaishou\.com/i,
+                /v\.kuaishou\.com/i,
+                /k\.sogou\.com/i
+            ];
+            return patterns.some(pattern => pattern.test(url));
+        }
+
+        async function getNextProxy() {
+            const proxy = CORS_PROXIES[currentProxyIndex];
+            currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
+            return proxy;
+        }
+
+        async function fetchWithProxy(url) {
+            let lastError = null;
+            for (let i = 0; i < CORS_PROXIES.length; i++) {
+                const proxy = await getNextProxy();
+                try {
+                    const response = await fetch(proxy + encodeURIComponent(url), {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+                        },
+                        timeout: 15000
+                    });
+                    if (response.ok) {
+                        return await response.text();
+                    }
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+            throw lastError || new Error('所有代理服务器均不可用');
+        }
+
+        async function resolveShortUrl(url) {
+            try {
+                const response = await fetch(url, {
+                    method: 'HEAD',
+                    redirect: 'follow',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+                    }
+                });
+                return response.url;
+            } catch {
+                return url;
+            }
+        }
+
+        async function parseDouyin(url) {
+            try {
+                url = await resolveShortUrl(url);
+                
+                const html = await fetchWithProxy(url);
+                
+                const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                if (stateMatch) {
+                    let stateStr = stateMatch[1];
+                    stateStr = stateStr.replace(/\n/g, ' ');
+                    stateStr = stateStr.replace(/;/g, '');
+                    try {
+                        const state = JSON.parse(stateStr);
+                        const itemList = state?.ItemModule?.itemList;
+                        if (itemList && itemList.length > 0) {
+                            const item = itemList[0];
+                            const video = item.video;
+                            const images = item.images;
+                            
+                            if (video) {
+                                let playUrl = video.playAddr || video.playAddrLow || video.playAddrH264 || '';
+                                if (!playUrl) {
+                                    const videoInfo = state?.VideoDetailModule?.videoInfo;
+                                    playUrl = videoInfo?.playAddr || videoInfo?.playAddrLow || '';
+                                }
+                                if (playUrl) {
+                                    playUrl = playUrl.replace(/playwm/g, 'play');
+                                    return {
+                                        type: 'video',
+                                        url: playUrl,
+                                        title: item.desc || '抖音视频'
+                                    };
+                                }
+                            }
+                            
+                            if (images && images.length > 0) {
+                                const imgUrls = images.map(img => img.urlList?.[0] || img.url || '').filter(Boolean);
+                                return {
+                                    type: 'gallery',
+                                    urls: imgUrls,
+                                    title: item.desc || '抖音图集'
+                                };
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                const playAddrMatch = html.match(/"playAddr"\s*:\s*"([^"]+)"/);
+                if (playAddrMatch) {
+                    let playUrl = playAddrMatch[1];
+                    playUrl = playUrl.replace(/playwm/g, 'play');
+                    return {
+                        type: 'video',
+                        url: playUrl,
+                        title: '抖音视频'
+                    };
+                }
+
+                const videoMatch = html.match(/<video[^>]+src="([^"]+)"/);
+                if (videoMatch) {
+                    let videoUrl = videoMatch[1];
+                    videoUrl = videoUrl.replace(/playwm/g, 'play');
+                    return {
+                        type: 'video',
+                        url: videoUrl,
+                        title: '抖音视频'
+                    };
+                }
+
+                throw new Error('未能提取视频地址');
+            } catch (error) {
+                throw new Error('抖音解析失败：' + error.message);
+            }
+        }
+
+        async function parseXiaohongshu(url) {
+            try {
+                url = await resolveShortUrl(url);
+                
+                const noteIdMatch = url.match(/note\/(\d+)/);
+                if (!noteIdMatch) {
+                    throw new Error('无法识别小红书笔记ID');
+                }
+                const noteId = noteIdMatch[1];
+                
+                const apiUrl = `https://www.xiaohongshu.com/api/sns/v3/note/${noteId}`;
+                const html = await fetchWithProxy(apiUrl);
+                
+                const dataMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                if (dataMatch) {
+                    try {
+                        const state = JSON.parse(dataMatch[1]);
+                        const note = state?.note?.noteDetail;
+                        if (note) {
+                            const images = note.images || [];
+                            const video = note.video;
+                            
+                            if (video) {
+                                return {
+                                    type: 'video',
+                                    url: video.url,
+                                    title: note.title || '小红书视频'
+                                };
+                            }
+                            
+                            if (images.length > 0) {
+                                const imgUrls = images.map(img => img.urls?.original || img.url || '').filter(Boolean);
+                                return {
+                                    type: 'gallery',
+                                    urls: imgUrls,
+                                    title: note.title || '小红书图集'
+                                };
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                const imgRegex = /"url"\s*:\s*"([^"]+original[^"]+)"/g;
+                const imgUrls = [];
+                let match;
+                while ((match = imgRegex.exec(html)) !== null) {
+                    imgUrls.push(match[1]);
+                }
+                
+                if (imgUrls.length > 0) {
+                    return {
+                        type: 'gallery',
+                        urls: imgUrls,
+                        title: '小红书图集'
+                    };
+                }
+
+                const videoMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
+                if (videoMatch) {
+                    return {
+                        type: 'video',
+                        url: videoMatch[1],
+                        title: '小红书视频'
+                    };
+                }
+
+                throw new Error('未能提取资源地址');
+            } catch (error) {
+                throw new Error('小红书解析失败：' + error.message);
+            }
+        }
+
+        async function parseKuaishou(url) {
+            try {
+                url = await resolveShortUrl(url);
+                
+                const html = await fetchWithProxy(url);
+                
+                const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
+                if (stateMatch) {
+                    try {
+                        const state = JSON.parse(stateMatch[1]);
+                        const video = state?.videoInfo?.video;
+                        if (video) {
+                            return {
+                                type: 'video',
+                                url: video.url || video.playUrl || '',
+                                title: video.caption || '快手视频'
+                            };
+                        }
+                    } catch (e) {}
+                }
+
+                const videoMatch = html.match(/"url"\s*:\s*"([^"]+video[^"]+)"/);
+                if (videoMatch) {
+                    return {
+                        type: 'video',
+                        url: videoMatch[1],
+                        title: '快手视频'
+                    };
+                }
+
+                const playUrlMatch = html.match(/"playUrl"\s*:\s*"([^"]+)"/);
+                if (playUrlMatch) {
+                    return {
+                        type: 'video',
+                        url: playUrlMatch[1],
+                        title: '快手视频'
+                    };
+                }
+
+                throw new Error('未能提取视频地址');
+            } catch (error) {
+                throw new Error('快手解析失败：' + error.message);
+            }
+        }
+
+        async function parseUrl(url) {
+            url = extractLink(url);
+            
+            if (!url) {
+                throw new Error('请输入链接');
+            }
+            
+            if (!isValidUrl(url)) {
+                throw new Error('不支持的链接格式，仅支持抖音、小红书、快手');
+            }
+
+            if (url.includes('douyin')) {
+                return await parseDouyin(url);
+            } else if (url.includes('xiaohongshu')) {
+                return await parseXiaohongshu(url);
+            } else if (url.includes('kuaishou')) {
+                return await parseKuaishou(url);
+            } else {
+                throw new Error('无法识别平台');
+            }
+        }
+
+        function renderVideo(result) {
+            videoPreview.classList.remove('hidden');
+            imageGallery.classList.add('hidden');
+            
+            resultVideo.src = result.url;
+            videoTitle.textContent = result.title;
+            
+            downloadBtn.onclick = () => downloadVideo(result.url, result.title);
+            copyLinkBtn.onclick = () => copyToClipboard(result.url);
+            openNewBtn.onclick = () => window.open(result.url, '_blank');
+        }
+
+        function renderGallery(result) {
+            videoPreview.classList.add('hidden');
+            imageGallery.classList.remove('hidden');
+            
+            images = result.urls;
+            currentImageIndex = 0;
+            
+            galleryTrack.innerHTML = '';
+            images.forEach((imgUrl, index) => {
+                const img = document.createElement('img');
+                img.src = imgUrl;
+                img.className = 'flex-shrink-0 w-full h-auto object-contain';
+                img.style.height = '400px';
+                img.loading = 'lazy';
+                galleryTrack.appendChild(img);
+            });
+            
+            galleryTitle.textContent = result.title;
+            updateGalleryCounter();
+            
+            downloadBtn.onclick = () => downloadAllImages();
+            copyLinkBtn.onclick = () => copyToClipboard(images[currentImageIndex]);
+            openNewBtn.onclick = () => window.open(images[currentImageIndex], '_blank');
+        }
+
+        function updateGalleryCounter() {
+            galleryCounter.textContent = `${currentImageIndex + 1}/${images.length}`;
+            galleryTrack.style.transform = `translateX(-${currentImageIndex * 100}%)`;
+        }
+
+        function prevImage() {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                updateGalleryCounter();
+            }
+        }
+
+        function nextImage() {
+            if (currentImageIndex < images.length - 1) {
+                currentImageIndex++;
+                updateGalleryCounter();
+            }
+        }
+
+        async function downloadVideo(url, title) {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${title || 'video'}.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+                showToast('开始下载');
+            } catch (error) {
+                showToast('下载失败，请尝试新窗口打开', 3000);
+            }
+        }
+
+        async function downloadAllImages() {
+            showToast('开始批量下载...', 3000);
+            for (let i = 0; i < images.length; i++) {
+                try {
+                    const response = await fetch(images[i]);
+                    const blob = await response.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `image_${i + 1}.jpg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(a.href);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (error) {
+                    console.error('下载失败', error);
+                }
+            }
+            showToast('批量下载完成');
+        }
+
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('复制成功');
+            } catch (error) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast('复制成功');
+            }
+        }
+
+        function saveHistory(result, originalUrl) {
+            const history = JSON.parse(localStorage.getItem('parseHistory') || '[]');
+            const record = {
+                id: Date.now(),
+                type: result.type,
+                title: result.title,
+                url: result.type === 'video' ? result.url : result.urls[0],
+                originalUrl: originalUrl,
+                timestamp: Date.now()
+            };
+            
+            history.unshift(record);
+            if (history.length > 20) {
+                history.pop();
+            }
+            
+            localStorage.setItem('parseHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const history = JSON.parse(localStorage.getItem('parseHistory') || '[]');
+            
+            if (history.length === 0) {
+                historyList.innerHTML = `
+                    <div class="text-center py-8 text-gray-400 dark:text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <p class="text-sm">暂无解析记录</p>
+                    </div>
+                `;
+                return;
+            }
+
+            historyList.innerHTML = history.map(item => `
+                <div class="bg-white dark:bg-gray-800 rounded-xl p-3 border border-gray-200 dark:border-gray-700 flex items-center justify-between group">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <div class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                            ${item.type === 'video' ? `
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            ` : `
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                            `}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate">${item.title}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-500 truncate">${item.originalUrl}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="btn-touch w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" onclick="copyToClipboard('${item.url}')">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                        </button>
+                        <button class="btn-touch w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors" onclick="deleteHistory(${item.id})">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteHistory(id) {
+            const history = JSON.parse(localStorage.getItem('parseHistory') || '[]');
+            const filtered = history.filter(item => item.id !== id);
+            localStorage.setItem('parseHistory', JSON.stringify(filtered));
+            renderHistory();
+            showToast('已删除');
+        }
+
+        function toggleTheme() {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        }
+
+        pasteBtn.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                linkInput.value = text;
+                showToast('粘贴成功');
+            } catch (error) {
+                showToast('粘贴失败，请手动粘贴', 3000);
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            linkInput.value = '';
+            resultSection.classList.add('hidden');
+        });
+
+        parseBtn.addEventListener('click', async () => {
+            const url = linkInput.value.trim();
+            
+            if (!url) {
+                showToast('请输入链接', 2000);
+                return;
+            }
+
+            setLoading(true);
+            
+            try {
+                const result = await parseUrl(url);
+                currentResult = result;
+                
+                resultSection.classList.remove('hidden');
+                
+                if (result.type === 'video') {
+                    renderVideo(result);
+                } else if (result.type === 'gallery') {
+                    renderGallery(result);
+                }
+                
+                saveHistory(result, url);
+                showToast('解析成功');
+            } catch (error) {
+                showToast(error.message, 3000);
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        closeResultBtn.addEventListener('click', () => {
+            resultSection.classList.add('hidden');
+            resultVideo.src = '';
+        });
+
+        themeToggle.addEventListener('click', toggleTheme);
+
+        clearHistoryBtn.addEventListener('click', () => {
+            showConfirm('确定清空所有解析历史？', () => {
+                localStorage.removeItem('parseHistory');
+                renderHistory();
+                showToast('已清空');
+            });
+        });
+
+        prevBtn.addEventListener('click', prevImage);
+        nextBtn.addEventListener('click', nextImage);
+
+        galleryContainer.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        galleryContainer.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }, { passive: true });
+
+        function handleSwipe() {
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+            
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+                if (diffX > 0) {
+                    prevImage();
+                } else {
+                    nextImage();
+                }
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                prevImage();
+            } else if (e.key === 'ArrowRight') {
+                nextImage();
+            } else if (e.key === 'Escape') {
+                resultSection.classList.add('hidden');
+                confirmModal.classList.add('hidden');
+            }
+        });
+
+        initTheme();
+        renderHistory();
+    </script>
+</body>
+</html>
