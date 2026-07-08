@@ -36,6 +36,19 @@
         body {
             -webkit-tap-highlight-color: transparent;
             touch-action: manipulation;
+            background-image: url('https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime%20girl%20with%20blonde%20hair%20and%20blue%20eyes%20wearing%20white%20and%20blue%20fantasy%20armor%20with%20golden%20details%2C%20elegant%20pose%2C%20dark%20blue%20background%20with%20golden%20magical%20circles%20and%20sparkles%2C%20genshin%20impact%20style%2C%20high%20quality%2C%20beautiful%20anime%20art&image_size=landscape_16_9');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+        .bg-blur {
+            backdrop-filter: blur(8px);
+            background-color: rgba(255, 255, 255, 0.85);
+        }
+        .dark .bg-blur {
+            background-color: rgba(17, 24, 39, 0.85);
         }
         .btn-touch {
             min-height: 48px;
@@ -111,7 +124,7 @@
     <main class="flex-1 max-w-lg mx-auto w-full px-4 py-6 space-y-6">
 
         <section class="slide-in">
-            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <div class="bg-blur rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">输入视频链接</label>
                 <div class="relative">
                     <textarea 
@@ -146,7 +159,7 @@
         </section>
 
         <section id="resultSection" class="hidden slide-in">
-            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div class="bg-blur rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 class="font-semibold text-gray-900 dark:text-white">解析结果</h3>
                     <button id="closeResultBtn" class="btn-touch p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
@@ -234,7 +247,7 @@
             </div>
         </section>
 
-        <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+        <section class="bg-blur rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
             <h3 class="font-semibold text-gray-900 dark:text-white mb-4">使用说明</h3>
             <ul class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
                 <li class="flex items-start gap-2">
@@ -252,7 +265,7 @@
             </ul>
         </section>
 
-        <section class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+        <section class="bg-blur rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
             <h3 class="font-semibold text-gray-900 dark:text-white mb-4">免责声明</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
                 本工具仅用于个人学习和素材收藏，请勿用于商业用途或侵犯他人版权。
@@ -937,14 +950,40 @@
             throw new Error('第三方API解析失败');
         }
 
-        function renderVideo(result) {
+        async function renderVideo(result) {
             videoPreview.classList.remove('hidden');
             imageGallery.classList.add('hidden');
             
-            resultVideo.src = result.url;
             videoTitle.textContent = result.title;
             
-            downloadBtn.onclick = () => downloadVideo(result.url, result.title);
+            try {
+                const response = await fetch(result.url, {
+                    headers: {
+                        'Referer': 'https://www.douyin.com/'
+                    }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    resultVideo.src = blobUrl;
+                    
+                    downloadBtn.onclick = () => {
+                        const a = document.createElement('a');
+                        a.href = blobUrl;
+                        a.download = `${result.title || 'video'}.mp4`;
+                        a.click();
+                    };
+                } else {
+                    resultVideo.src = result.url;
+                    downloadBtn.onclick = () => downloadVideo(result.url, result.title);
+                }
+            } catch (e) {
+                console.warn('Fetch video failed, using direct URL:', e.message);
+                resultVideo.src = result.url;
+                downloadBtn.onclick = () => downloadVideo(result.url, result.title);
+            }
+            
             copyLinkBtn.onclick = () => copyToClipboard(result.url);
             openNewBtn.onclick = () => openVideoInNewWindow(result.url, result.title);
         }
@@ -967,7 +1006,7 @@
                         body {
                             margin: 0;
                             padding: 20px;
-                            background: #000;
+                            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
                             display: flex;
                             flex-direction: column;
                             align-items: center;
@@ -977,14 +1016,15 @@
                         }
                         video {
                             max-width: 100%;
-                            max-height: 80vh;
-                            border-radius: 12px;
-                            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                            max-height: 70vh;
+                            border-radius: 16px;
+                            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
                         }
                         .title {
                             color: #fff;
-                            margin-bottom: 16px;
-                            font-size: 16px;
+                            margin-bottom: 20px;
+                            font-size: 18px;
+                            font-weight: 600;
                             text-align: center;
                             max-width: 90%;
                             overflow: hidden;
@@ -992,24 +1032,27 @@
                             white-space: nowrap;
                         }
                         .download-btn {
-                            margin-top: 16px;
-                            padding: 12px 32px;
-                            background: #007bff;
+                            margin-top: 20px;
+                            padding: 14px 40px;
+                            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
                             color: white;
                             border: none;
-                            border-radius: 8px;
+                            border-radius: 12px;
                             font-size: 16px;
+                            font-weight: 600;
                             cursor: pointer;
-                            transition: background 0.2s;
+                            transition: transform 0.2s, box-shadow 0.2s;
+                            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
                         }
                         .download-btn:hover {
-                            background: #0056b3;
+                            transform: translateY(-2px);
+                            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
                         }
                     </style>
                 </head>
                 <body>
                     <div class="title">${title || '抖音视频'}</div>
-                    <video src="${videoUrl}" controls autoplay></video>
+                    <video src="${videoUrl}" controls autoplay playsinline></video>
                     <a href="${videoUrl}" download="${title || 'video'}.mp4" class="download-btn">下载视频</a>
                 </body>
                 </html>
