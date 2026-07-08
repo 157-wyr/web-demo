@@ -265,13 +265,13 @@
     <footer class="safe-area-bottom py-6 text-center">
         <div class="max-w-lg mx-auto px-4">
             <p class="text-xs text-gray-400 dark:text-gray-600">
-                本页面为静态网页，可部署到 Vercel、GitHub Pages、国内静态托管平台等
+                推荐部署到 Vercel（支持 Serverless 函数）
             </p>
             <p class="text-xs text-gray-400 dark:text-gray-600 mt-1">
-                跨域说明：线上部署后无本地打开的 CORS 跨域问题，手机流量/WiFi 均可正常解析
+                部署步骤：git push 到 GitHub → 连接 Vercel → 自动部署
             </p>
-            <p class="text-xs text-orange-400 dark:text-orange-500 mt-2">
-                ⚠️ 本地开发环境可能因网络限制无法访问公共代理服务器，请部署上线后测试
+            <p class="text-xs text-blue-400 dark:text-blue-500 mt-1">
+                🚀 必须使用支持 Serverless 的平台，否则解析功能不可用
             </p>
         </div>
     </footer>
@@ -874,14 +874,32 @@
                 throw new Error('不支持的链接格式，仅支持抖音、小红书、快手');
             }
 
-            if (url.includes('douyin')) {
-                return await parseDouyin(url);
-            } else if (url.includes('xiaohongshu')) {
-                return await parseXiaohongshu(url);
-            } else if (url.includes('kuaishou')) {
-                return await parseKuaishou(url);
-            } else {
-                throw new Error('无法识别平台');
+            try {
+                const apiUrl = `/api/parse?url=${encodeURIComponent(url)}`;
+                const response = await fetchWithTimeout(apiUrl, {}, 15000);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+                    return result;
+                }
+                
+                const errorText = await response.text();
+                throw new Error('API请求失败: ' + errorText);
+            } catch (apiError) {
+                console.warn('API解析失败，尝试本地解析:', apiError.message);
+                
+                if (url.includes('douyin')) {
+                    return await parseDouyin(url);
+                } else if (url.includes('xiaohongshu')) {
+                    return await parseXiaohongshu(url);
+                } else if (url.includes('kuaishou')) {
+                    return await parseKuaishou(url);
+                } else {
+                    throw new Error('无法识别平台');
+                }
             }
         }
 

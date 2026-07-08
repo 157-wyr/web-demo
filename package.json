@@ -1,0 +1,13 @@
+{
+  "name": "video-watermark-remover",
+  "version": "1.0.0",
+  "description": "短视频去水印解析工具",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
+}
