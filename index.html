@@ -916,9 +916,12 @@
                     
                     if (response.ok) {
                         const data = await response.json();
-                        console.log('第三方API响应:', JSON.stringify(data).substring(0, 200));
+                        console.log('第三方API响应:', JSON.stringify(data).substring(0, 300));
                         
                         if (data.code === 200) {
+                            if (data.yvideo) {
+                                return { type: 'video', url: data.yvideo, title: data.title || '抖音视频' };
+                            }
                             if (data.video) {
                                 return { type: 'video', url: data.video, title: data.title || '抖音视频' };
                             }
