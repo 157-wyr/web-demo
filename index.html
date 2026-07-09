@@ -1022,12 +1022,13 @@
                             const a = document.createElement('a');
                             a.href = videoBlobUrl;
                             a.download = `${result.title || 'video'}.mp4`;
+                            a.style.display = 'none';
                             document.body.appendChild(a);
                             a.click();
                             document.body.removeChild(a);
                             showToast('下载已开始', 'success');
                         } else {
-                            downloadViaServerless(finalUrl, result.title);
+                            directDownload(finalUrl, result.title);
                         }
                     };
                 } else {
@@ -1036,9 +1037,10 @@
             } catch (e) {
                 console.warn('Fetch video failed:', e.message);
                 resultVideo.src = result.url;
+                finalUrl = result.url;
                 
                 downloadBtn.onclick = () => {
-                    downloadViaServerless(result.url, result.title);
+                    directDownload(finalUrl, result.title);
                 };
             }
             
@@ -1057,40 +1059,32 @@
             videoLoading.classList.add('hidden');
         }
         
-        async function downloadViaServerless(url, title) {
+        function directDownload(url, title) {
             try {
-                const proxyUrl = `/api/download?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
-                
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const blobUrl = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = blobUrl;
-                    a.download = `${title || 'video'}.mp4`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(blobUrl);
-                    showToast('下载已开始', 'success');
-                } else {
-                    throw new Error('代理下载失败');
-                }
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${title || 'video'}.mp4`;
+                a.target = '_blank';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                showToast('已在新窗口打开视频，请长按保存', 'success');
             } catch (e) {
-                console.error('Download via serverless failed:', e.message);
+                console.error('Direct download failed:', e.message);
                 window.open(url, '_blank');
                 showToast('已在新窗口打开视频，请长按保存', 'success');
             }
         }
 
-        function openVideoInNewWindow(videoUrl, title) {
+        async function openVideoInNewWindow(videoUrl, title) {
             const newWindow = window.open('', '_blank', 'width=800,height=600');
             if (!newWindow) {
                 showToast('请允许弹出新窗口', 2000);
                 return;
             }
             
-            const html = `
+            newWindow.document.write(`
                 <!DOCTYPE html>
                 <html lang="zh-CN">
                 <head>
@@ -1143,18 +1137,58 @@
                             transform: translateY(-2px);
                             box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
                         }
+                        .loading {
+                            color: #fff;
+                            font-size: 16px;
+                            animation: pulse 1s infinite;
+                        }
+                        @keyframes pulse {
+                            0%, 100% { opacity: 1; }
+                            50% { opacity: 0.5; }
+                        }
                     </style>
                 </head>
                 <body>
                     <div class="title">${title || '抖音视频'}</div>
-                    <video src="${videoUrl}" controls autoplay playsinline></video>
-                    <a href="${videoUrl}" download="${title || 'video'}.mp4" class="download-btn">下载视频</a>
+                    <div class="loading">加载中...</div>
                 </body>
                 </html>
-            `;
-            
-            newWindow.document.write(html);
+            `);
             newWindow.document.close();
+            
+            try {
+                const response = await fetch(videoUrl, {
+                    headers: {
+                        'Referer': 'https://www.douyin.com/',
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+                    }
+                });
+                
+                if (response.ok) {
+                    const finalUrl = response.url;
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    
+                    newWindow.document.body.innerHTML = `
+                        <div class="title">${title || '抖音视频'}</div>
+                        <video src="${blobUrl}" controls autoplay playsinline></video>
+                        <a href="${blobUrl}" download="${title || 'video'}.mp4" class="download-btn">下载视频</a>
+                    `;
+                } else {
+                    newWindow.document.body.innerHTML = `
+                        <div class="title">${title || '抖音视频'}</div>
+                        <video src="${videoUrl}" controls autoplay playsinline></video>
+                        <a href="${videoUrl}" download="${title || 'video'}.mp4" class="download-btn">下载视频</a>
+                    `;
+                }
+            } catch (e) {
+                console.error('Open video in new window failed:', e.message);
+                newWindow.document.body.innerHTML = `
+                    <div class="title">${title || '抖音视频'}</div>
+                    <video src="${videoUrl}" controls autoplay playsinline></video>
+                    <a href="${videoUrl}" download="${title || 'video'}.mp4" class="download-btn">下载视频</a>
+                `;
+            }
         }
 
         function renderGallery(result) {
