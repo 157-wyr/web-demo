@@ -1000,31 +1000,47 @@
             
             videoLoading.classList.remove('hidden');
             
+            let videoBlobUrl = null;
             let finalUrl = result.url;
             
             try {
-                const headResponse = await fetch(result.url, {
-                    method: 'HEAD',
+                const response = await fetch(result.url, {
                     headers: {
                         'Referer': 'https://www.douyin.com/',
                         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
-                    },
-                    redirect: 'follow'
+                    }
                 });
                 
-                if (headResponse.ok) {
-                    finalUrl = headResponse.url;
+                if (response.ok) {
+                    finalUrl = response.url;
+                    const blob = await response.blob();
+                    videoBlobUrl = URL.createObjectURL(blob);
+                    resultVideo.src = videoBlobUrl;
+                    
+                    downloadBtn.onclick = () => {
+                        if (videoBlobUrl) {
+                            const a = document.createElement('a');
+                            a.href = videoBlobUrl;
+                            a.download = `${result.title || 'video'}.mp4`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            showToast('下载已开始', 'success');
+                        } else {
+                            downloadViaServerless(finalUrl, result.title);
+                        }
+                    };
+                } else {
+                    throw new Error('HTTP error');
                 }
             } catch (e) {
-                console.warn('HEAD request failed, using original URL:', e.message);
+                console.warn('Fetch video failed:', e.message);
+                resultVideo.src = result.url;
+                
+                downloadBtn.onclick = () => {
+                    downloadViaServerless(result.url, result.title);
+                };
             }
-            
-            resultVideo.src = finalUrl;
-            
-            downloadBtn.onclick = () => {
-                window.open(finalUrl, '_blank');
-                showToast('已在新窗口打开视频，请长按保存', 'success');
-            };
             
             copyLinkBtn.onclick = () => copyToClipboard(finalUrl);
             openNewBtn.onclick = () => openVideoInNewWindow(finalUrl, result.title);
@@ -1034,11 +1050,37 @@
                 showToast('视频加载失败，请尝试新窗口打开', 'error');
                 downloadBtn.onclick = () => {
                     window.open(finalUrl, '_blank');
-                    showToast('已在新窗口打开视频', 'success');
+                    showToast('已在新窗口打开视频，请长按保存', 'success');
                 };
             };
             
             videoLoading.classList.add('hidden');
+        }
+        
+        async function downloadViaServerless(url, title) {
+            try {
+                const proxyUrl = `/api/download?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = `${title || 'video'}.mp4`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                    showToast('下载已开始', 'success');
+                } else {
+                    throw new Error('代理下载失败');
+                }
+            } catch (e) {
+                console.error('Download via serverless failed:', e.message);
+                window.open(url, '_blank');
+                showToast('已在新窗口打开视频，请长按保存', 'success');
+            }
         }
 
         function openVideoInNewWindow(videoUrl, title) {
