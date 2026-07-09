@@ -923,37 +923,32 @@
 
         async function parseDouyinWithThirdParty(url) {
             const apis = [
-                'https://api.pearktrue.cn/api/video/parse/?url=',
-                'https://api.yujian.vip/api/dy/parse/?url=',
-                'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url=',
-                'https://api.copymanga.org/api/dy/parse/?url='
+                'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url='
             ];
             
-            const promises = apis.map(async (apiUrl) => {
+            for (const apiUrl of apis) {
                 try {
                     const response = await fetchWithTimeout(apiUrl + encodeURIComponent(url), {
                         headers: {
                             'Referer': 'https://www.douyin.com/',
-                            'Origin': 'https://www.douyin.com'
+                            'Origin': 'https://www.douyin.com',
+                            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
                         }
-                    }, 10000);
+                    }, 15000);
                     
                     if (response.ok) {
                         const data = await response.json();
                         console.log('第三方API响应:', JSON.stringify(data).substring(0, 500));
                         
-                        if (data.code === 200 || data.code === 0 || data.success) {
-                            if (data.video && !data.video.includes('.mp3') && !data.video.includes('music') && !data.video.includes('/music/')) {
-                                return { type: 'video', url: data.video, title: data.title || '抖音视频' };
-                            }
+                        if (data.code === 200) {
                             if (data.yvideo) {
                                 return { type: 'video', url: data.yvideo, title: data.title || '抖音视频' };
                             }
-                            if (data.url) {
-                                return { type: 'video', url: data.url, title: data.title || '抖音视频' };
+                            if (data.video && data.video.includes('.mp4') && !data.video.includes('.mp3') && !data.video.includes('/music/') && !data.video.includes('music')) {
+                                return { type: 'video', url: data.video, title: data.title || '抖音视频' };
                             }
-                            if (data.data && data.data.url) {
-                                return { type: 'video', url: data.data.url, title: data.title || '抖音视频' };
+                            if (data.video && !data.video.includes('.mp3') && !data.video.includes('/music/') && !data.video.includes('music') && !data.video.includes('sf6-cdn')) {
+                                return { type: 'video', url: data.video, title: data.title || '抖音视频' };
                             }
                             if (data.images && data.images.length > 0) {
                                 return { type: 'gallery', urls: data.images, title: data.title || '抖音图集' };
@@ -962,15 +957,6 @@
                     }
                 } catch (e) {
                     console.warn('第三方API请求失败:', apiUrl, e.message);
-                }
-                return null;
-            });
-            
-            const results = await Promise.all(promises);
-            
-            for (const result of results) {
-                if (result) {
-                    return result;
                 }
             }
             
@@ -986,60 +972,45 @@
             
             videoLoading.classList.remove('hidden');
             
-            let videoBlobUrl = null;
+            let finalUrl = result.url;
             
             try {
-                const response = await fetch(result.url, {
+                const headResponse = await fetch(result.url, {
+                    method: 'HEAD',
                     headers: {
                         'Referer': 'https://www.douyin.com/',
                         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
-                    }
+                    },
+                    redirect: 'follow'
                 });
                 
-                if (response.ok) {
-                    const blob = await response.blob();
-                    videoBlobUrl = URL.createObjectURL(blob);
-                    resultVideo.src = videoBlobUrl;
-                    
-                    downloadBtn.onclick = () => {
-                        if (videoBlobUrl) {
-                            const a = document.createElement('a');
-                            a.href = videoBlobUrl;
-                            a.download = `${result.title || 'video'}.mp4`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            showToast('已开始下载', 'success');
-                        } else {
-                            downloadVideo(result.url, result.title);
-                        }
-                    };
-                } else {
-                    throw new Error('HTTP error');
+                if (headResponse.ok) {
+                    finalUrl = headResponse.url;
                 }
             } catch (e) {
-                console.warn('Fetch video failed, using direct URL:', e.message);
-                resultVideo.src = result.url;
-                
-                downloadBtn.onclick = () => {
-                    window.open(result.url, '_blank');
-                    showToast('已在新窗口打开视频', 'success');
-                };
-            } finally {
-                videoLoading.classList.add('hidden');
+                console.warn('HEAD request failed, using original URL:', e.message);
             }
             
-            copyLinkBtn.onclick = () => copyToClipboard(result.url);
-            openNewBtn.onclick = () => openVideoInNewWindow(result.url, result.title);
+            resultVideo.src = finalUrl;
+            
+            downloadBtn.onclick = () => {
+                window.open(finalUrl, '_blank');
+                showToast('已在新窗口打开视频，请长按保存', 'success');
+            };
+            
+            copyLinkBtn.onclick = () => copyToClipboard(finalUrl);
+            openNewBtn.onclick = () => openVideoInNewWindow(finalUrl, result.title);
             
             resultVideo.onerror = () => {
                 console.error('Video load error');
                 showToast('视频加载失败，请尝试新窗口打开', 'error');
                 downloadBtn.onclick = () => {
-                    window.open(result.url, '_blank');
+                    window.open(finalUrl, '_blank');
                     showToast('已在新窗口打开视频', 'success');
                 };
             };
+            
+            videoLoading.classList.add('hidden');
         }
 
         function openVideoInNewWindow(videoUrl, title) {
