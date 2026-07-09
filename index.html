@@ -171,7 +171,15 @@
                 
                 <div class="p-4">
                     <div id="videoPreview" class="hidden">
-                        <video id="resultVideo" class="w-full rounded-xl bg-black" controls playsinline></video>
+                        <div class="relative w-full rounded-xl overflow-hidden bg-black">
+                            <video id="resultVideo" class="w-full" controls playsinline poster=""></video>
+                            <div id="videoLoading" class="absolute inset-0 flex items-center justify-center bg-black/50 hidden">
+                                <svg class="w-8 h-8 text-white animate-spin" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                        </div>
                         <p id="videoTitle" class="mt-3 text-sm text-gray-600 dark:text-gray-400 line-clamp-2"></p>
                     </div>
                     
@@ -955,37 +963,64 @@
             imageGallery.classList.add('hidden');
             
             videoTitle.textContent = result.title;
+            resultVideo.src = '';
+            
+            videoLoading.classList.remove('hidden');
+            
+            let videoBlobUrl = null;
             
             try {
                 const response = await fetch(result.url, {
                     headers: {
-                        'Referer': 'https://www.douyin.com/'
+                        'Referer': 'https://www.douyin.com/',
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
                     }
                 });
                 
                 if (response.ok) {
                     const blob = await response.blob();
-                    const blobUrl = URL.createObjectURL(blob);
-                    resultVideo.src = blobUrl;
+                    videoBlobUrl = URL.createObjectURL(blob);
+                    resultVideo.src = videoBlobUrl;
                     
                     downloadBtn.onclick = () => {
-                        const a = document.createElement('a');
-                        a.href = blobUrl;
-                        a.download = `${result.title || 'video'}.mp4`;
-                        a.click();
+                        if (videoBlobUrl) {
+                            const a = document.createElement('a');
+                            a.href = videoBlobUrl;
+                            a.download = `${result.title || 'video'}.mp4`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            showToast('已开始下载', 'success');
+                        } else {
+                            downloadVideo(result.url, result.title);
+                        }
                     };
                 } else {
-                    resultVideo.src = result.url;
-                    downloadBtn.onclick = () => downloadVideo(result.url, result.title);
+                    throw new Error('HTTP error');
                 }
             } catch (e) {
                 console.warn('Fetch video failed, using direct URL:', e.message);
                 resultVideo.src = result.url;
-                downloadBtn.onclick = () => downloadVideo(result.url, result.title);
+                
+                downloadBtn.onclick = () => {
+                    window.open(result.url, '_blank');
+                    showToast('已在新窗口打开视频', 'success');
+                };
+            } finally {
+                videoLoading.classList.add('hidden');
             }
             
             copyLinkBtn.onclick = () => copyToClipboard(result.url);
             openNewBtn.onclick = () => openVideoInNewWindow(result.url, result.title);
+            
+            resultVideo.onerror = () => {
+                console.error('Video load error');
+                showToast('视频加载失败，请尝试新窗口打开', 'error');
+                downloadBtn.onclick = () => {
+                    window.open(result.url, '_blank');
+                    showToast('已在新窗口打开视频', 'success');
+                };
+            };
         }
 
         function openVideoInNewWindow(videoUrl, title) {
