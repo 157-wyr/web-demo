@@ -929,14 +929,14 @@
                 'https://api.copymanga.org/api/dy/parse/?url='
             ];
             
-            for (const apiUrl of apis) {
+            const promises = apis.map(async (apiUrl) => {
                 try {
                     const response = await fetchWithTimeout(apiUrl + encodeURIComponent(url), {
                         headers: {
                             'Referer': 'https://www.douyin.com/',
                             'Origin': 'https://www.douyin.com'
                         }
-                    }, 15000);
+                    }, 10000);
                     
                     if (response.ok) {
                         const data = await response.json();
@@ -963,7 +963,17 @@
                 } catch (e) {
                     console.warn('第三方API请求失败:', apiUrl, e.message);
                 }
+                return null;
+            });
+            
+            const results = await Promise.all(promises);
+            
+            for (const result of results) {
+                if (result) {
+                    return result;
+                }
             }
+            
             throw new Error('第三方API解析失败');
         }
 
