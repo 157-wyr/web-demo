@@ -36,7 +36,7 @@
         body {
             -webkit-tap-highlight-color: transparent;
             touch-action: manipulation;
-            background-image: url('https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=anime%20girl%20with%20blonde%20hair%20and%20blue%20eyes%20wearing%20white%20and%20blue%20fantasy%20armor%20with%20golden%20details%2C%20elegant%20pose%2C%20dark%20blue%20background%20with%20golden%20magical%20circles%20and%20sparkles%2C%20genshin%20impact%20style%2C%20high%20quality%2C%20beautiful%20anime%20art&image_size=landscape_16_9');
+            background-image: url('98ae6ebcfc1cb9a8df09b7a0ed06f233.jpg');
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
@@ -1059,17 +1059,27 @@
             videoLoading.classList.add('hidden');
         }
         
-        function directDownload(url, title) {
+        async function directDownload(url, title) {
+            showToast('正在准备下载...', 'success');
             try {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${title || 'video'}.mp4`;
-                a.target = '_blank';
-                a.style.display = 'none';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                showToast('已在新窗口打开视频，请长按保存', 'success');
+                const proxyUrl = `/api/download?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = `${title || 'video'}.mp4`;
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                    showToast('下载已开始', 'success');
+                } else {
+                    throw new Error('代理下载失败');
+                }
             } catch (e) {
                 console.error('Direct download failed:', e.message);
                 window.open(url, '_blank');
