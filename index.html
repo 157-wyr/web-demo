@@ -923,32 +923,42 @@
 
         async function parseDouyinWithThirdParty(url) {
             const apis = [
-                'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url='
+                'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url=',
+                'https://api.kuaishou.com/rest/wd/short-video/by-params?params={"short_code":"' + url.match(/([a-zA-Z0-9]+)$/)?.[1] || '' + '"}',
+                'https://api.douyin.wtf/api/parse?url=',
+                'https://api.pearktrue.cn/api/video/parse/?url='
             ];
             
-            for (const apiUrl of apis) {
+            const promises = apis.map(async (apiUrl) => {
                 try {
+                    if (apiUrl.includes('kuaishou') && !url.includes('kuaishou')) {
+                        return null;
+                    }
+                    
                     const response = await fetchWithTimeout(apiUrl + encodeURIComponent(url), {
                         headers: {
                             'Referer': 'https://www.douyin.com/',
                             'Origin': 'https://www.douyin.com',
                             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
                         }
-                    }, 15000);
+                    }, 8000);
                     
                     if (response.ok) {
                         const data = await response.json();
                         console.log('第三方API响应:', JSON.stringify(data).substring(0, 500));
                         
-                        if (data.code === 200) {
+                        if (data.code === 200 || data.code === 0 || data.success) {
                             if (data.yvideo) {
                                 return { type: 'video', url: data.yvideo, title: data.title || '抖音视频' };
                             }
                             if (data.video && data.video.includes('.mp4') && !data.video.includes('.mp3') && !data.video.includes('/music/') && !data.video.includes('music')) {
                                 return { type: 'video', url: data.video, title: data.title || '抖音视频' };
                             }
-                            if (data.video && !data.video.includes('.mp3') && !data.video.includes('/music/') && !data.video.includes('music') && !data.video.includes('sf6-cdn')) {
-                                return { type: 'video', url: data.video, title: data.title || '抖音视频' };
+                            if (data.url && data.url.includes('.mp4')) {
+                                return { type: 'video', url: data.url, title: data.title || '抖音视频' };
+                            }
+                            if (data.data && data.data.url) {
+                                return { type: 'video', url: data.data.url, title: data.title || '抖音视频' };
                             }
                             if (data.images && data.images.length > 0) {
                                 return { type: 'gallery', urls: data.images, title: data.title || '抖音图集' };
@@ -957,6 +967,15 @@
                     }
                 } catch (e) {
                     console.warn('第三方API请求失败:', apiUrl, e.message);
+                }
+                return null;
+            });
+            
+            const results = await Promise.allSettled(promises);
+            
+            for (const result of results) {
+                if (result.status === 'fulfilled' && result.value) {
+                    return result.value;
                 }
             }
             
