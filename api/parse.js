@@ -19,7 +19,7 @@ function fetchUrl(url, options = {}) {
                 'Connection': 'keep-alive',
                 ...options.headers
             },
-            timeout: 20000
+            timeout: 15000
         };
 
         const req = protocol.request(reqOptions, (res) => {
@@ -51,14 +51,15 @@ function fetchUrl(url, options = {}) {
 
 const PARSE_APIS = [
     'https://cn.apihz.cn/api/fun/douyin.php?id=88888888&key=88888888&url=',
-    'https://api.pearktrue.cn/api/video/parse/?url=',
-    'https://api.yujian.vip/api/dy/parse/?url=',
-    'https://api.copymanga.org/api/dy/parse/?url=',
-    'https://api.r21.cc/api/dy/parse/?url='
+    'https://api.r21.cc/api/dy/parse/?url=',
+    'https://api.aijiasu.com/api/douyin/?url=',
+    'https://api.douyin.parse/api/video/?url=',
+    'https://api.toubiec.cn/douy?url=',
+    'https://api.shenjian.io/v1/parse/douyin?url='
 ];
 
 async function parseWithThirdPartyApi(url) {
-    for (const apiUrl of PARSE_APIS) {
+    const promises = PARSE_APIS.map(async (apiUrl) => {
         try {
             console.log('Trying API:', apiUrl);
             const result = await fetchUrl(apiUrl + encodeURIComponent(url), {
@@ -67,8 +68,6 @@ async function parseWithThirdPartyApi(url) {
                     'Origin': 'https://www.douyin.com'
                 }
             });
-            
-            console.log('API response status:', result.statusCode);
             
             if (result.statusCode === 200) {
                 try {
@@ -85,31 +84,20 @@ async function parseWithThirdPartyApi(url) {
                     }
                     
                     if (data.code === 200 || data.code === 0 || data.success) {
-                        if (data.video) {
-                            return { type: 'video', url: data.video, title: data.title || data.msg || '抖音视频' };
+                        if (data.yvideo) {
+                            return { type: 'video', url: data.yvideo, title: data.title || '抖音视频' };
                         }
-                        
+                        if (data.video && !data.video.includes('.mp3') && !data.video.includes('/music/')) {
+                            return { type: 'video', url: data.video, title: data.title || '抖音视频' };
+                        }
+                        if (data.url && data.url.includes('.mp4')) {
+                            return { type: 'video', url: data.url, title: data.title || '抖音视频' };
+                        }
+                        if (data.data && data.data.url) {
+                            return { type: 'video', url: data.data.url, title: data.title || '抖音视频' };
+                        }
                         if (data.images && data.images.length > 0) {
                             return { type: 'gallery', urls: data.images, title: data.title || '抖音图集' };
-                        }
-                        
-                        const video = data.data || data.result || data;
-                        
-                        if (video.url) {
-                            return { type: 'video', url: video.url, title: video.title || video.desc || '视频' };
-                        }
-                        
-                        if (video.video_url || video.play_url) {
-                            return { type: 'video', url: video.video_url || video.play_url, title: video.title || '视频' };
-                        }
-                        
-                        if (video.url_list && video.url_list.length > 0) {
-                            return { type: 'video', url: video.url_list[0], title: video.title || '视频' };
-                        }
-                        
-                        if (video.images && video.images.length > 0) {
-                            const imgUrls = video.images.map(img => img.url || img).filter(Boolean);
-                            return { type: 'gallery', urls: imgUrls, title: video.title || '图集' };
                         }
                     }
                 } catch (e) {
@@ -119,7 +107,17 @@ async function parseWithThirdPartyApi(url) {
         } catch (error) {
             console.error('API request failed:', apiUrl, error.message);
         }
+        return null;
+    });
+
+    const results = await Promise.allSettled(promises);
+    
+    for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+            return result.value;
+        }
     }
+    
     throw new Error('所有解析服务均不可用');
 }
 
@@ -129,7 +127,7 @@ async function parseDouyinDirect(url) {
     
     if (url.includes('v.douyin.com')) {
         try {
-            const result = await fetchUrl(url, { method: 'GET' });
+            const result = await fetchUrl(url, { method: 'HEAD' });
             finalUrl = result.headers.location || url;
             if (!finalUrl.startsWith('http')) {
                 finalUrl = new URL(finalUrl, url).href;
@@ -167,128 +165,8 @@ async function parseDouyinDirect(url) {
 
     console.log('Video ID:', videoId);
 
-    const htmlResult = await fetchUrl(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-            'Cookie': 'ttwid=1%7C9a3c2d1e8f7b6a5c4d3e2f1a0b9c8d7e;',
-            'Referer': 'https://www.douyin.com/'
-        }
-    });
-    const html = htmlResult.body;
-
-    console.log('HTML length:', html.length);
-
-    const initialStateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*([^;]+)/);
-    if (initialStateMatch) {
-        try {
-            const state = JSON.parse(initialStateMatch[1]);
-            console.log('Found __INITIAL_STATE__');
-            
-            const videos = state?.video?.videoList || state?.awemeDetail?.videoList;
-            if (videos && videos.length > 0) {
-                const video = videos[0];
-                let playUrl = video.playAddr?.url_list?.[0] || video.downloadAddr?.url_list?.[0] || video.video_url || '';
-                if (playUrl) {
-                    playUrl = playUrl.replace(/playwm/g, 'play');
-                    if (playUrl.startsWith('//')) playUrl = 'https:' + playUrl;
-                    return { type: 'video', url: playUrl, title: video.desc || '抖音视频' };
-                }
-            }
-        } catch (e) {
-            console.error('__INITIAL_STATE__ parse error:', e.message);
-        }
-    }
-
-    const playAddrMatch = html.match(/"playAddr"\s*:\s*"([^"]+)"/);
-    if (playAddrMatch) {
-        let playUrl = playAddrMatch[1];
-        playUrl = playUrl.replace(/playwm/g, 'play');
-        if (playUrl.startsWith('//')) playUrl = 'https:' + playUrl;
-        console.log('Found playAddr:', playUrl);
-        return { type: 'video', url: playUrl, title: '抖音视频' };
-    }
-
-    const downloadAddrMatch = html.match(/"downloadAddr"\s*:\s*"([^"]+)"/);
-    if (downloadAddrMatch) {
-        let videoUrl = downloadAddrMatch[1];
-        videoUrl = videoUrl.replace(/playwm/g, 'play');
-        if (videoUrl.startsWith('//')) videoUrl = 'https:' + videoUrl;
-        console.log('Found downloadAddr:', videoUrl);
-        return { type: 'video', url: videoUrl, title: '抖音视频' };
-    }
-
-    const urlListMatch = html.match(/"url_list":\[([^\]]+)\]/);
-    if (urlListMatch) {
-        const innerUrls = urlListMatch[1].match(/"([^"]+play[^"]+)"/g);
-        if (innerUrls && innerUrls.length > 0) {
-            let videoUrl = innerUrls[0].replace(/"/g, '');
-            videoUrl = videoUrl.replace(/playwm/g, 'play');
-            if (videoUrl.startsWith('//')) videoUrl = 'https:' + videoUrl;
-            console.log('Found url_list:', videoUrl);
-            return { type: 'video', url: videoUrl, title: '抖音视频' };
-        }
-    }
-
-    const awemeInfoMatch = html.match(/window\.__AWEME_INFO__\s*=\s*([^;]+)/);
-    if (awemeInfoMatch) {
-        try {
-            const awemeInfo = JSON.parse(awemeInfoMatch[1]);
-            const video = awemeInfo?.video;
-            if (video) {
-                let playUrl = video.play_addr?.url_list?.[0] || video.download_addr?.url_list?.[0] || '';
-                if (playUrl) {
-                    playUrl = playUrl.replace(/playwm/g, 'play');
-                    if (playUrl.startsWith('//')) playUrl = 'https:' + playUrl;
-                    return { type: 'video', url: playUrl, title: '抖音视频' };
-                }
-            }
-        } catch (e) {
-            console.error('__AWEME_INFO__ parse error:', e.message);
-        }
-    }
-
-    const apiUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${videoId}`;
-    const apiResult = await fetchUrl(apiUrl, {
-        headers: {
-            'Cookie': 'ttwid=1%7C9a3c2d1e8f7b6a5c4d3e2f1a0b9c8d7e;',
-            'x-secsdk-csrf-token': '',
-            'x-tt-env': '0',
-            'x-tt-platform': '0',
-            'x-bogus': 'DFSzswV84wUAN88b5y1l0w=='
-        }
-    });
-
-    console.log('Douyin API status:', apiResult.statusCode);
-
-    if (apiResult.statusCode === 200) {
-        try {
-            const data = JSON.parse(apiResult.body);
-            console.log('Douyin API response:', JSON.stringify(data).substring(0, 500));
-            
-            if (data?.aweme_detail) {
-                const video = data.aweme_detail.video;
-                const images = data.aweme_detail.image_list;
-                
-                if (video) {
-                    let playUrl = video.play_addr?.url_list?.[0] || video.download_addr?.url_list?.[0] || '';
-                    if (playUrl) {
-                        playUrl = playUrl.replace(/playwm/g, 'play');
-                        if (playUrl.startsWith('//')) playUrl = 'https:' + playUrl;
-                        return { type: 'video', url: playUrl, title: data.aweme_detail.desc || '抖音视频' };
-                    }
-                }
-                
-                if (images && images.length > 0) {
-                    const imgUrls = images.map(img => img.url_list?.[0] || img.url || '').filter(Boolean);
-                    return { type: 'gallery', urls: imgUrls, title: data.aweme_detail.desc || '抖音图集' };
-                }
-            }
-        } catch (e) {
-            console.error('Douyin JSON parse error:', e);
-        }
-    }
-
-    throw new Error('未能提取视频地址');
+    const yvideoUrl = `https://www.douyin.com/aweme/v1/play/?video_id=${videoId}`;
+    return { type: 'video', url: yvideoUrl, title: '抖音视频' };
 }
 
 async function parseXiaohongshuDirect(url) {
